@@ -7,7 +7,6 @@ import org.springframework.web.server.ResponseStatusException;
 import java.net.URI;
 import java.security.SecureRandom;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class UrlService {
@@ -17,21 +16,28 @@ public class UrlService {
     private static final int CODE_LENGTH = 6;
 
     private final SecureRandom random = new SecureRandom();
-    private final ConcurrentHashMap<String, String> store = new ConcurrentHashMap<>();
+    private final UrlRepository repository;
+
+    public UrlService(UrlRepository repository) {
+        this.repository = repository;
+    }
 
     public String shorten(String longUrl) {
         validate(longUrl);
-        while (true) {
-            String code = generateCode();
-            // putIfAbsent makes collision handling thread-safe
-            if (store.putIfAbsent(code, longUrl) == null) {
-                return code;
-            }
-        }
+        String code;
+        do {
+            code = generateCode();
+        } while (repository.findByShortCode(code).isPresent());
+
+        UrlMapping mapping = new UrlMapping();
+        mapping.setShortCode(code);
+        mapping.setOriginalUrl(longUrl);
+        repository.save(mapping);
+        return code;
     }
 
     public Optional<String> resolve(String code) {
-        return Optional.ofNullable(store.get(code));
+        return repository.findByShortCode(code).map(UrlMapping::getOriginalUrl);
     }
 
     private String generateCode() {
